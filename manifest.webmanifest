@@ -1,0 +1,14 @@
+{
+  "name": "STYL Ops Hub",
+  "short_name": "STYL Ops",
+  "description": "Internal client, task, and OKR hub for STYL Digital Solutions",
+  "start_url": "./#/overview",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
