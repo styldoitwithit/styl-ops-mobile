@@ -1,5 +1,5 @@
 // Offline cache for the prototype shell.
-const CACHE = "styl-ops-v2";
+const CACHE = "styl-ops-v3";
 const ASSETS = [
   "./",
   "./index.html",

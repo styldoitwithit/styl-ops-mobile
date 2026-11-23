@@ -329,14 +329,31 @@
     view.innerHTML = `<div class="auth-wrap"><div class="auth-card">${html}</div></div>`;
   }
 
+  // Prototype PIN gate (not real security — it opens the sample-data app).
+  const DEMO_PIN = "12345";
+
   function renderLogin(message) {
     authScreen(`
-      <h1>STYL Ops Hub</h1>
-      <p class="muted">Sign in with your STYL Google account</p>
+      <h1>STYL-Ops</h1>
+      <p class="muted">Enter your PIN to continue</p>
       ${message ? `<p class="auth-error">${esc(message)}</p>` : ""}
-      <button class="btn" id="googleBtn"${S.sb ? "" : " disabled"}>Continue with Google</button>
-      <button class="btn btn-ghost" id="demoBtn" style="margin-top:10px">Explore with sample data</button>
-      ${S.sb ? "" : `<p class="auth-note">Can't reach the sign-in service. Check your connection.</p>`}`);
+      <form id="pinForm" autocomplete="off">
+        <input id="pin" class="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="5" placeholder="•••••" aria-label="PIN" autofocus>
+        <button class="btn" type="submit">Login</button>
+      </form>
+      <p class="pin-hint">Prototype PIN: 12345</p>
+      ${S.sb ? `<p class="or">or</p><button class="btn btn-ghost" id="googleBtn">Continue with Google (live data)</button>` : ""}`);
+
+    const pin = $("#pin");
+    const tryPin = () => {
+      if (pin.value === DEMO_PIN) { store.set(MODE_KEY, "demo"); startDemo(); return; }
+      pin.classList.remove("error"); void pin.offsetWidth; pin.classList.add("error");
+      pin.value = "";
+      toast("Wrong PIN — try 12345");
+    };
+    $("#pinForm").addEventListener("submit", (e) => { e.preventDefault(); tryPin(); });
+    pin.addEventListener("input", () => { pin.value = pin.value.replace(/\D/g, ""); if (pin.value.length === 5) tryPin(); });
+
     $("#googleBtn")?.addEventListener("click", async (e) => {
       e.currentTarget.disabled = true;
       e.currentTarget.textContent = "Redirecting…";
@@ -346,7 +363,6 @@
       });
       if (error) renderLogin(error.message);
     });
-    $("#demoBtn").addEventListener("click", () => { store.set(MODE_KEY, "demo"); startDemo(); });
   }
 
   function renderNoAccess() {
@@ -391,7 +407,39 @@
     const dueToday = k.filter((x) => x.due_date === t).length;
 
     const stat = (label, value, tone, action) =>
-      `<button class="stat" data-action="${action}"><p class="stat-label">${label}</p><p class="stat-value ${tone || ""}">${value}</p></button>`;
+      `<button class="stat" data-tone="${tone}" data-action="${action}"><p class="stat-label">${label}</p><p class="stat-value">${value}</p></button>`;
+
+    // Status breakdowns — green = done/active, amber = pending/at risk, red = churned/overdue.
+    const CLIENT_STATUS = [
+      ["active", "Active", "green"], ["onboarding", "Onboarding", "violet"], ["lead", "Lead", "blue"],
+      ["at_risk", "At risk", "amber"], ["paused", "Paused", "grey"], ["churned", "Churned", "red"],
+    ];
+    const TASK_STATUS = [
+      ["Done", "Done", "green"], ["In progress", "In progress", "blue"],
+      ["Pending approval", "Pending", "amber"], ["To do", "To do", "grey"],
+    ];
+    const TONE = {
+      green: ["var(--green)", "rgba(16,185,129,.12)", "var(--green-fg)"],
+      blue: ["var(--blue)", "rgba(59,130,246,.12)", "var(--blue-fg)"],
+      violet: ["var(--violet)", "rgba(139,92,246,.12)", "var(--violet-fg)"],
+      amber: ["var(--amber)", "rgba(245,158,11,.12)", "var(--amber-fg)"],
+      red: ["#ef4444", "rgba(239,68,68,.12)", "var(--red-fg)"],
+      grey: ["#737373", "rgba(115,115,115,.15)", "var(--text-3)"],
+    };
+    const breakdown = (title, rows, list, key, pctLabel) => {
+      const counts = rows.map(([k, l, t]) => [l, t, list.filter((x) => x[key] === k).length]).filter(([, , n], i) => n > 0 || i < 4);
+      const total = list.length || 1;
+      return `
+        <div class="card breakdown">
+          <div class="breakdown-head"><h3>${title}</h3>${pctLabel ? `<span class="pct">${pctLabel}</span>` : `<span class="pct" style="color:var(--dim)">${list.length} total</span>`}</div>
+          <div class="stack">${counts.map(([, t, n]) => `<span style="flex:${n};background:${TONE[t][0]}"></span>`).join("")}</div>
+          <div class="legend">
+            ${counts.map(([l, t, n]) => `<div class="legend-item" style="--c:${TONE[t][0]};--c-bg:${TONE[t][1]};--c-fg:${TONE[t][2]}"><span class="l">${l}</span><b>${n}</b></div>`).join("")}
+          </div>
+        </div>`;
+    };
+    const done = k.filter((x) => x.status === "Done").length;
+    const donePct = k.length ? `${Math.round((done / k.length) * 100)}% complete` : "";
 
     const now = Date.now();
     const upcoming = db.meetings
@@ -404,12 +452,17 @@
       <p class="page-sub">Here's where things stand.${isLive() ? "" : ` <span class="badge b-amber" style="margin-left:4px">Sample data</span>`}</p>
 
       <div class="stats">
-        ${stat("Active clients", active, "", "clients")}
-        ${stat("Leads", leads, "", "clients")}
-        ${stat("At risk", risk, risk > 0 ? "tone-warn" : "", "clients")}
-        ${stat("Open tasks", open, "", "tasks")}
-        ${stat("Due today", dueToday, dueToday > 0 ? "tone-warn" : "", "tasks")}
-        ${stat("Overdue", overdue, overdue > 0 ? "tone-danger" : "", "tasks")}
+        ${stat("Active clients", active, "green", "clients")}
+        ${stat("Leads", leads, "blue", "clients")}
+        ${stat("At risk", risk, risk > 0 ? "amber" : "grey", "clients")}
+        ${stat("Open tasks", open, "violet", "tasks")}
+        ${stat("Due today", dueToday, dueToday > 0 ? "amber" : "grey", "tasks")}
+        ${stat("Overdue", overdue, overdue > 0 ? "red" : "green", "tasks")}
+      </div>
+
+      <div class="breakdowns">
+        ${breakdown("Clients", CLIENT_STATUS, c, "status", "")}
+        ${breakdown("Tasks", TASK_STATUS, k, "status", donePct)}
       </div>
 
       <div class="overview-grid">
@@ -834,8 +887,8 @@
            </div>`
         : `<p class="note">You're looking at sample data stored in this browser. Nothing here touches real STYL data.</p>
            <div class="form">
-             <button class="btn" id="goLogin">Sign in with Google</button>
              <button class="btn btn-ghost" id="resetData">Reset sample data</button>
+             <button class="btn btn-ghost" id="goLogin">Log out</button>
            </div>`,
       onMount: (s) => {
         $("#refreshBtn", s)?.addEventListener("click", async (e) => {
@@ -895,7 +948,18 @@
     renderLogin(oauthError || "");
   }
 
-  boot();
+  // Splash: show "STYL-Ops" for at least ~1.3s, then fade out once the app is ready.
+  const splashStart = Date.now();
+  const hideSplash = () => {
+    const wait = Math.max(0, 1300 - (Date.now() - splashStart));
+    setTimeout(() => {
+      const sp = $("#splash");
+      if (!sp) return;
+      sp.classList.add("hide");
+      setTimeout(() => sp.remove(), 450);
+    }, wait);
+  };
+  Promise.resolve(boot()).catch((e) => { console.error(e); renderLogin(); }).finally(hideSplash);
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
     navigator.serviceWorker.register("sw.js").catch(() => {});
   }
